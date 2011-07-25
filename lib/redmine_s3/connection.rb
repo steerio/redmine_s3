@@ -2,7 +2,7 @@ require 'S3'
 module RedmineS3
   class Connection
     @@access_key_id     = nil
-    @@secret_acces_key  = nil
+    @@secret_access_key  = nil
     @@bucket            = nil
     @@uri               = nil
     @@conn              = nil
@@ -10,7 +10,7 @@ module RedmineS3
     def self.load_options
       options = YAML::load(ERB.new(IO.read(File.join(Rails.root, 'config', 's3.yml'))).result)
       @@access_key_id     = options[Rails.env]['access_key_id']
-      @@secret_acces_key  = options[Rails.env]['secret_access_key']
+      @@secret_access_key  = options[Rails.env]['secret_access_key']
       @@bucket            = options[Rails.env]['bucket']
 
       if options[Rails.env]['cname_bucket'] == true
@@ -21,12 +21,21 @@ module RedmineS3
     end
 
     def self.establish_connection
-      load_options unless @@access_key_id && @@secret_acces_key
-      @@conn = S3::AWSAuthConnection.new(@@access_key_id, @@secret_acces_key, false)
+      load_options unless @@access_key_id && @@secret_access_key
+      @@conn = S3::AWSAuthConnection.new(@@access_key_id, @@secret_access_key, false)
+    end
+
+    def self.establish_auth_generator
+      load_options unless @@access_key_id && @@secret_access_key
+      @@qs_conn ||= S3::QueryStringAuthGenerator.new(@@access_key_id, @@secret_access_key, false)
     end
 
     def self.conn
       @@conn || establish_connection
+    end
+
+    def self.auth_generator
+      establish_auth_generator
     end
 
     def self.bucket
@@ -37,6 +46,11 @@ module RedmineS3
     def self.uri
       load_options unless @@uri
       @@uri
+    end
+
+    def self.private_uri(filepath)
+      load_options unless @@bucket
+      auth_generator.get(bucket, filepath)
     end
 
     def self.create_bucket
