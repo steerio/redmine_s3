@@ -1,41 +1,56 @@
+require 'digest/md5'
+
 module RedmineS3
   module AttachmentPatch
-    def self.included(base) # :nodoc:
-      base.extend(ClassMethods)
-      base.send(:include, InstanceMethods)
- 
-      # Same as typing in the class 
-      base.class_eval do
-        unloadable # Send unloadable so it will not be unloaded in development
-        attr_accessor :s3_access_key_id, :s3_secret_acces_key, :s3_bucket, :s3_bucket
-        after_validation :put_to_s3
-        before_destroy   :delete_from_s3
-      end
+    extend ActiveSupport::Concern
+
+    included do
+      unloadable # Send unloadable so it will not be unloaded in development
+      cattr_accessor :bucket, :s3_prefix
+      remove_method :files_to_final_location, :delete_from_disk!
+      after_save :upload_to_s3
     end
     
-    module ClassMethods
+    def one_time_url
+      s3_obj.url_for(:read).to_s
     end
-    
-    module InstanceMethods
-      def put_to_s3
-        if @temp_file && (@temp_file.size > 0)
-          logger.debug("Uploading to #{RedmineS3::Connection.uri}/#{path_to_file}")
-          RedmineS3::Connection.put(path_to_file, @temp_file.read)
-          md5 = Digest::MD5.new
-          self.digest = md5.hexdigest
+
+    private
+
+    def files_to_final_location
+      # We don't do the actual upload here as that will need the record ID,
+      # but we'll reuse this method name from the original code.
+
+      if @temp_file && (@temp_file.size > 0)
+        self.digest = case @temp_file
+          when String then Digest::MD5.hexdigest(@temp_file)
+          when IO     then Digest::MD5.new.file(@temp_file.path).hexdigest
         end
-        @temp_file = nil # so that the model's original after_save block skips writing to the fs
       end
+      true
+    end
 
-      def delete_from_s3
-        logger.debug("Deleting #{RedmineS3::Connection.uri}/#{path_to_file}")
-        RedmineS3::Connection.delete(path_to_file)
+    def upload_to_s3
+      if @temp_file && (@temp_file.size > 0)
+        update_column :disk_filename, "#{id}_#{filename}"
+        logger.debug("Uploading to #{bucket.name}/#{s3_path}")
+        s3_obj.write(@temp_file)
       end
+      @temp_file = nil
+      true
+    end
 
-      def path_to_file
-        # obscure the filename by using the timestamp for the 'directory'
-        disk_filename.split('_').first + '/' + disk_filename
-      end
+    def delete_from_disk!
+      logger.debug("Deleting #{bucket.name}/#{s3_path}")
+      s3_obj.delete
+    end
+
+    def s3_obj
+      bucket.objects[s3_path]
+    end
+
+    def s3_path
+      "#{s3_prefix}#{disk_filename}"
     end
   end
 end
