@@ -23,7 +23,7 @@ AWS_S3_BUCKET::         Bucket (and optional path prefix)
 
 Use this method if you have no control over your environment variables.
 
-1. cp vendor/plugins/redmine_s3/config/s3.yml.example config/s3.yml
+1. Copy GEM_ROOT/config/s3.yml.example to RAILS_ROOT/config/s3.yml
 2. Edit config/s3.yml with your favourite editor
 
 == Options
